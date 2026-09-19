@@ -1,0 +1,19 @@
+{
+  "name": "nerkhemroozchand-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ربات نرخ امروز چند؟ (تلگرام + بله + ایتا) — نسخهٔ Cloudflare Workers",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --experimental-test-module-mocks --test test/*.test.js",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.18.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.135.0"
+  }
+}
