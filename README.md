@@ -1,4 +1,4 @@
-# 🤖 ربات نرخ امروز چند؟ — نسخهٔ Cloudflare Workers
+# 🤖 ربات نسخهٔ Cloudflare Workers
 
 مهاجرت کامل پروژهٔ Railway/Flask (تلگرام + بله + ایتا) به **Cloudflare
 Workers**، با هدف حذف هزینهٔ اجرا در بلندمدت. منطق و خروجی ربات نسبت به
