@@ -7,7 +7,7 @@ let _cachedPrices = null;
 let _lastFetchTime = 0;
 const CACHE_TTL_MS = 60000;
 
-const DATA_JSON_URL = "https://prices-landing-page.pages.dev/data.json";
+const DATA_JSON_URL = "https://nerkhemroozchand.pages.dev/data.json";
 
 async function fetchAllPrices() {
   const now = Date.now();
