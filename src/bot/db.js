@@ -11,7 +11,14 @@ const CACHE_TTL_MS = 60000; // کش ۶۰ ثانیه‌ای در حافظه ور�
 const DATA_JSON_URL = "https://nerkhemroozchand.pages.dev/data.json";
 
 /**
- * دریافت و کش اطلاعات قیمت‌ها از فایل استاتیک JSON
+ * دریافت و کش اطلاعات قیمت‌ها از فایل استاتیک JSON.
+ *
+ * نکته دربارهٔ حذف `?t=${Date.now()}`: این پارامتر کش لبه (edge cache) خود
+ * Cloudflare Pages/CDN را برای این URL کاملاً دور می‌زد (چون هر بار یک URL
+ * کاملاً جدید می‌ساخت)، در حالی که خودمان همین‌جا یک کش ۶۰ ثانیه‌ای در
+ * حافظهٔ Worker داریم که تازگی داده را کنترل می‌کند. نتیجهٔ آن پارامتر فقط
+ * این بود که هر ۶۰ ثانیه یک‌بار (به‌جای استفاده از کش CDN) مستقیم به مبدأ
+ * Pages می‌رفتیم - بدون فایدهٔ اضافه، فقط کمی تأخیر بیشتر.
  */
 async function fetchAllPrices() {
   const now = Date.now();
@@ -20,13 +27,13 @@ async function fetchAllPrices() {
   }
 
   try {
-    const response = await fetch(`${DATA_JSON_URL}?t=${now}`, {
+    const response = await fetch(DATA_JSON_URL, {
       headers: { "Accept": "application/json" }
     });
     if (!response.ok) return _cachedPrices || [];
-    
+
     const data = await response.json();
-    if (Array.isArray(data)) {
+    if (Array.isArray(data) && data.length > 0) {
       _cachedPrices = data;
       _lastFetchTime = now;
       return _cachedPrices;
@@ -39,7 +46,8 @@ async function fetchAllPrices() {
 }
 
 // ---------------------------------------------------------------------------
-// اتصال به Turso (منحصراً برای مدیریت دیده‌بان شخصی / Watchlist)
+// اتصال به Turso (برای دیده‌بان شخصی / Watchlist، و به‌عنوان fallback
+// اضطراری برای خواندن نرخ‌ها - پایین‌تر توضیح داده شده)
 // ---------------------------------------------------------------------------
 
 export function getClient(env) {
@@ -88,11 +96,65 @@ export async function execute(env, sql, args = []) {
 }
 
 // ---------------------------------------------------------------------------
-// خواندن قیمت‌های عمومی (جایگزین شده با data.json)
+// خواندن قیمت‌های عمومی (اول از data.json، با fallback اضطراری به Turso)
 // ---------------------------------------------------------------------------
+// چرا fallback لازم است: قبل از این تغییر، اگر fetch به data.json شکست
+// می‌خورد و هیچ کش گرمی هم در حافظهٔ Worker نبود (مثلا سرد شدن instance،
+// یا یک اختلال موقت در Cloudflare Pages)، fetchAllPrices آرایهٔ خالی
+// برمی‌گرداند و کل ربات برای «همهٔ» نمادها «پیدا نشد» نشان می‌داد - یک
+// قطعی کامل و بی‌صدا، دقیقاً برای همان لحظاتی که پایداری بیشتر لازم است.
+// حالا اگر data.json عملاً خالی برگردد، همان یک تعامل به‌جای شکست کامل،
+// مستقیم و فقط برای همان درخواست از Turso می‌خواند (دقیقاً رفتار نسخهٔ
+// قبل از این بهینه‌سازی کش) و بار بعدی که data.json در دسترس باشد، خودکار
+// دوباره از کش استفاده می‌شود.
+
+function rowToObj(row) {
+  return {
+    symbol_key: row.symbol_key,
+    title_fa: row.title_fa,
+    price: row.price,
+    change_amount: row.change_amount,
+    change_percent: row.change_percent,
+    updated_at: row.updated_at,
+  };
+}
+
+async function getItemFromTurso(env, symbolKey) {
+  const rs = await execute(
+    env,
+    "SELECT symbol_key, title_fa, price, change_amount, change_percent, updated_at FROM market_prices WHERE symbol_key = ?",
+    [symbolKey]
+  );
+  const row = rs.rows[0];
+  return row ? rowToObj(row) : null;
+}
+
+async function getItemsFromTurso(env, symbolKeys) {
+  if (!symbolKeys || symbolKeys.length === 0) return [];
+  const placeholders = symbolKeys.map(() => "?").join(",");
+  const rs = await execute(
+    env,
+    `SELECT symbol_key, title_fa, price, change_amount, change_percent, updated_at FROM market_prices WHERE symbol_key IN (${placeholders})`,
+    symbolKeys
+  );
+  const map = {};
+  for (const row of rs.rows) map[row.symbol_key] = rowToObj(row);
+  return symbolKeys.filter((k) => map[k]).map((k) => map[k]);
+}
+
+async function searchItemsFromTurso(env, query, limit) {
+  const like = `%${query.trim()}%`;
+  const rs = await execute(
+    env,
+    "SELECT symbol_key, title_fa, price, change_amount, change_percent, updated_at FROM market_prices WHERE title_fa LIKE ? ORDER BY title_fa LIMIT ?",
+    [like, limit]
+  );
+  return rs.rows.map(rowToObj);
+}
 
 export async function getItem(env, symbolKey) {
   const prices = await fetchAllPrices();
+  if (prices.length === 0) return getItemFromTurso(env, symbolKey);
   const item = prices.find((p) => p.symbol_key === symbolKey);
   return item || null;
 }
@@ -100,6 +162,7 @@ export async function getItem(env, symbolKey) {
 export async function getItems(env, symbolKeys) {
   if (!symbolKeys || symbolKeys.length === 0) return [];
   const prices = await fetchAllPrices();
+  if (prices.length === 0) return getItemsFromTurso(env, symbolKeys);
   const map = {};
   for (const item of prices) {
     map[item.symbol_key] = item;
@@ -112,7 +175,8 @@ export async function searchItems(env, query, limit = 15) {
   if (!query) return [];
   const q = query.trim().toLowerCase();
   const prices = await fetchAllPrices();
-  
+  if (prices.length === 0) return searchItemsFromTurso(env, query, limit);
+
   const filtered = prices
     .filter((item) => item.title_fa && item.title_fa.toLowerCase().includes(q))
     .sort((a, b) => (a.title_fa || "").localeCompare(b.title_fa || "", "fa")); // مرتب‌سازی الفبایی دقیقاً مثل ORDER BY title_fa
