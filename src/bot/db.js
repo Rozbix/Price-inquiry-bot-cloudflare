@@ -73,7 +73,7 @@ async function ensureWatchlistTable(env) {
 
   await client.execute(`
     CREATE TABLE IF NOT EXISTS watchlist (
-      user_id     INTEGER NOT NULL,
+      user_id      INTEGER NOT NULL,
       symbol_key  TEXT NOT NULL,
       added_at    TEXT,
       PRIMARY KEY (user_id, symbol_key)
@@ -120,6 +120,7 @@ function rowToObj(row) {
 }
 
 async function getItemFromTurso(env, symbolKey) {
+  console.log(`[Data-Source] 🟡 Fetching [${symbolKey}] from Turso DB`);
   const rs = await execute(
     env,
     "SELECT symbol_key, title_fa, price, change_amount, change_percent, updated_at FROM market_prices WHERE symbol_key = ?",
@@ -130,6 +131,7 @@ async function getItemFromTurso(env, symbolKey) {
 }
 
 async function getItemsFromTurso(env, symbolKeys) {
+  console.log(`[Data-Source] 🟡 Fetching multiple items from Turso DB`);
   if (!symbolKeys || symbolKeys.length === 0) return [];
   const placeholders = symbolKeys.map(() => "?").join(",");
   const rs = await execute(
@@ -143,6 +145,7 @@ async function getItemsFromTurso(env, symbolKeys) {
 }
 
 async function searchItemsFromTurso(env, query, limit) {
+  console.log(`[Data-Source] 🟡 Searching items from Turso DB`);
   const like = `%${query.trim()}%`;
   const rs = await execute(
     env,
@@ -154,7 +157,10 @@ async function searchItemsFromTurso(env, query, limit) {
 
 export async function getItem(env, symbolKey) {
   const prices = await fetchAllPrices();
-  if (prices.length === 0) return getItemFromTurso(env, symbolKey);
+  if (prices.length === 0) {
+    return getItemFromTurso(env, symbolKey);
+  }
+  console.log(`[Data-Source] 🟢 Fetched [${symbolKey}] from data.json`);
   const item = prices.find((p) => p.symbol_key === symbolKey);
   return item || null;
 }
@@ -162,7 +168,10 @@ export async function getItem(env, symbolKey) {
 export async function getItems(env, symbolKeys) {
   if (!symbolKeys || symbolKeys.length === 0) return [];
   const prices = await fetchAllPrices();
-  if (prices.length === 0) return getItemsFromTurso(env, symbolKeys);
+  if (prices.length === 0) {
+    return getItemsFromTurso(env, symbolKeys);
+  }
+  console.log(`[Data-Source] 🟢 Fetched multiple items from data.json`);
   const map = {};
   for (const item of prices) {
     map[item.symbol_key] = item;
@@ -175,8 +184,11 @@ export async function searchItems(env, query, limit = 15) {
   if (!query) return [];
   const q = query.trim().toLowerCase();
   const prices = await fetchAllPrices();
-  if (prices.length === 0) return searchItemsFromTurso(env, query, limit);
+  if (prices.length === 0) {
+    return searchItemsFromTurso(env, query, limit);
+  }
 
+  console.log(`[Data-Source] 🟢 Searched items from data.json`);
   const filtered = prices
     .filter((item) => item.title_fa && item.title_fa.toLowerCase().includes(q))
     .sort((a, b) => (a.title_fa || "").localeCompare(b.title_fa || "", "fa")); // مرتب‌سازی الفبایی دقیقاً مثل ORDER BY title_fa
