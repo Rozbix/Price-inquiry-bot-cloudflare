@@ -47,7 +47,8 @@ export const CRYPTO_KEYS = [
 
 export const BOURSE_IR_KEYS = [
   "bourse_total", "bourse_market1", "bourse_market2",
-  "bourse_pequal", "bourse_pweighted", "ifb_market1", "ifb_market2",
+  "bourse_equal_total", "bourse_pequal", "bourse_pweighted",
+  "ifb_total", "ifb_market1", "ifb_market2",
 ];
 
 export const BOURSE_WORLD_KEYS = [
